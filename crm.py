@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import plotly.express as px
 import json
 import os
 
@@ -50,12 +49,15 @@ page = st.sidebar.radio("Go to", ["Dashboard", "Customers", "Deals", "Activities
 
 def save_data():
     """Save data to JSON files"""
-    with open('customers.json', 'w') as f:
-        json.dump(st.session_state.customers, f)
-    with open('deals.json', 'w') as f:
-        json.dump(st.session_state.deals, f)
-    with open('activities.json', 'w') as f:
-        json.dump(st.session_state.activities, f)
+    try:
+        with open('customers.json', 'w') as f:
+            json.dump(st.session_state.customers, f)
+        with open('deals.json', 'w') as f:
+            json.dump(st.session_state.deals, f)
+        with open('activities.json', 'w') as f:
+            json.dump(st.session_state.activities, f)
+    except Exception as e:
+        st.warning(f"Unable to save data: {e}")
 
 def load_data():
     """Load data from JSON files"""
@@ -70,7 +72,7 @@ def load_data():
             with open('activities.json', 'r') as f:
                 st.session_state.activities = json.load(f)
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        st.warning(f"Error loading data: {e}")
 
 # Load data on startup
 load_data()
@@ -109,22 +111,22 @@ def dashboard():
             value=recent_activities
         )
     
-    # Charts
+    # Charts using native Streamlit charts
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Deal Pipeline")
         if st.session_state.deals:
             df_deals = pd.DataFrame(st.session_state.deals)
-            fig = px.bar(df_deals, x='status', y='value', title='Deal Value by Status')
-            st.plotly_chart(fig, use_container_width=True)
+            deal_stats = df_deals.groupby('status')['value'].sum().reset_index()
+            st.bar_chart(deal_stats.set_index('status'))
     
     with col2:
         st.subheader("Recent Activities")
         if st.session_state.activities:
             df_activities = pd.DataFrame(st.session_state.activities)
-            fig = px.timeline(df_activities, x_start='date', y='type', title='Activity Timeline')
-            st.plotly_chart(fig, use_container_width=True)
+            activity_counts = df_activities['type'].value_counts()
+            st.bar_chart(activity_counts)
 
 def customers():
     st.title("👥 Customers")
@@ -166,10 +168,14 @@ def deals():
     with st.expander("Add New Deal"):
         with st.form("new_deal"):
             title = st.text_input("Deal Title")
-            customer = st.selectbox(
-                "Customer",
-                options=[c['name'] for c in st.session_state.customers]
-            )
+            if st.session_state.customers:
+                customer = st.selectbox(
+                    "Customer",
+                    options=[c['name'] for c in st.session_state.customers]
+                )
+            else:
+                st.warning("Please add customers first")
+                customer = None
             value = st.number_input("Value ($)", min_value=0.0)
             status = st.selectbox(
                 "Status",
@@ -177,7 +183,7 @@ def deals():
             )
             
             if st.form_submit_button("Add Deal"):
-                if title and value > 0:
+                if title and customer and value > 0:
                     st.session_state.deals.append({
                         'id': len(st.session_state.deals) + 1,
                         'title': title,
@@ -208,15 +214,19 @@ def activities():
                 "Activity Type",
                 options=["Call", "Meeting", "Email", "Task"]
             )
-            customer = st.selectbox(
-                "Customer",
-                options=[c['name'] for c in st.session_state.customers]
-            )
+            if st.session_state.customers:
+                customer = st.selectbox(
+                    "Customer",
+                    options=[c['name'] for c in st.session_state.customers]
+                )
+            else:
+                st.warning("Please add customers first")
+                customer = None
             notes = st.text_area("Notes")
             date = st.date_input("Date")
             
             if st.form_submit_button("Add Activity"):
-                if notes:
+                if notes and customer:
                     st.session_state.activities.append({
                         'id': len(st.session_state.activities) + 1,
                         'type': type,
@@ -227,7 +237,7 @@ def activities():
                     save_data()
                     st.success("Activity added successfully!")
                 else:
-                    st.error("Please add some notes!")
+                    st.error("Please fill in all required fields!")
     
     # Display activities
     if st.session_state.activities:
